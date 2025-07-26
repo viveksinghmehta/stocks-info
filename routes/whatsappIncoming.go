@@ -32,8 +32,8 @@ func twillioClient(phone, message string) (*openApi.ApiV2010Message, error) {
 	})
 
 	params := &openApi.CreateMessageParams{}
-	params.SetFrom(helper.AppConstant().WhatsApp + helper.AppConstant().Phone_Number) // Twilio phone number
-	println("### ", helper.AppConstant().WhatsApp+helper.AppConstant().Phone_Number)
+	params.SetFrom(helper.AppConstant().WhatsApp + os.Getenv(helper.EnvironmentConstant().PHONE_NUMBER)) // Twilio phone number
+
 	params.SetTo(helper.AppConstant().WhatsApp + phone) // Recipient's phone number
 	params.SetBody(message)
 

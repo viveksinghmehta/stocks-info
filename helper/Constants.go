@@ -5,11 +5,7 @@ type EnvironmentConstants struct {
 	GIN_MODE           string
 	TWILIO_ACCOUNT_SID string
 	TWILIO_AUTH_TOKEN  string
-}
-
-type AppConstants struct {
-	Phone_Number string
-	WhatsApp     string
+	PHONE_NUMBER       string
 }
 
 func EnvironmentConstant() EnvironmentConstants {
@@ -18,12 +14,16 @@ func EnvironmentConstant() EnvironmentConstants {
 		GIN_MODE:           "GIN_MODE",
 		TWILIO_AUTH_TOKEN:  "TWILIO_AUTH_TOKEN",
 		TWILIO_ACCOUNT_SID: "TWILIO_ACCOUNT_SID",
+		PHONE_NUMBER:       "PHONE_NUMBER",
 	}
+}
+
+type AppConstants struct {
+	WhatsApp string
 }
 
 func AppConstant() AppConstants {
 	return AppConstants{
-		Phone_Number: "+14155238886",
-		WhatsApp:     "whatsapp:",
+		WhatsApp: "whatsapp:",
 	}
 }

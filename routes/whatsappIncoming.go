@@ -41,18 +41,21 @@ func twillioClient(phone, message string) (*openApi.ApiV2010Message, error) {
 }
 
 func WhatsAppIncoming(c *gin.Context) {
+
 	var message TwillioWhatsappMessageRequest
 
+	// 1. Receive the message and decode it
 	if err := c.Bind(&message); err != nil {
 		c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{
 			"message": "Could not decode the values",
 		})
 	}
 
-	messageBody := "Hello 👋🏻, This is Stocks Info Account"
+	// 2. Check if the number is in the database or a new user.
+	// 2 - 1. if new user save it the DB
+	// 2 - 2. ask for the name of the user and save it against its phone number
 
-	println("FROM :- ", message.To)
-	println("TO :- ", message.From)
+	messageBody := "Hello 👋🏻, This is Stocks Info Account"
 
 	phone := strings.TrimPrefix(message.From, helper.AppConstant().WhatsApp)
 

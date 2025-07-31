@@ -1,6 +1,7 @@
 package routes
 
 import (
+	"database/sql"
 	"net/http"
 	"os"
 	"stocks-info-channel/helper"
@@ -32,7 +33,7 @@ func twillioClient(phone, message string) (*openApi.ApiV2010Message, error) {
 	})
 
 	params := &openApi.CreateMessageParams{}
-	params.SetFrom(helper.AppConstant().WhatsApp + os.Getenv(helper.EnvironmentConstant().PHONE_NUMBER)) // Twilio phone number
+	params.SetFrom(helper.AppConstant().WhatsApp + os.Getenv(helper.EnvironmentConstant().PHONE_NUMBER)) // Twilio whatsapp phone number
 
 	params.SetTo(helper.AppConstant().WhatsApp + phone) // Recipient's phone number
 	params.SetBody(message)
@@ -40,36 +41,38 @@ func twillioClient(phone, message string) (*openApi.ApiV2010Message, error) {
 	return client.Api.CreateMessage(params)
 }
 
-func WhatsAppIncoming(c *gin.Context) {
+func WhatsAppIncoming(db *sql.DB) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		var message TwillioWhatsappMessageRequest
 
-	var message TwillioWhatsappMessageRequest
+		// 1. Receive the message and decode it
+		if err := c.Bind(&message); err != nil {
+			c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{
+				"message": "Could not decode the values",
+			})
+			return
+		}
 
-	// 1. Receive the message and decode it
-	if err := c.Bind(&message); err != nil {
-		c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{
-			"message": "Could not decode the values",
+		// 2. Check if the number is in the database or a new user.
+		// 2 - 1. if new user save it the DB
+		// 2 - 2. ask for the name of the user and save it against its phone number
+
+		messageBody := "Hello 👋🏻, This is Stocks Info Account"
+
+		phone := strings.TrimPrefix(message.From, helper.AppConstant().WhatsApp)
+
+		response, error := twillioClient(phone, messageBody)
+		if error != nil {
+			c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{
+				"status_code": http.StatusInternalServerError,
+				"message":     error.Error(),
+			})
+			return
+		}
+
+		c.JSON(http.StatusOK, gin.H{
+			"OK":       "OK",
+			"response": response,
 		})
 	}
-
-	// 2. Check if the number is in the database or a new user.
-	// 2 - 1. if new user save it the DB
-	// 2 - 2. ask for the name of the user and save it against its phone number
-
-	messageBody := "Hello 👋🏻, This is Stocks Info Account"
-
-	phone := strings.TrimPrefix(message.From, helper.AppConstant().WhatsApp)
-
-	response, error := twillioClient(phone, messageBody)
-	if error != nil {
-		c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{
-			"status_code": http.StatusInternalServerError,
-			"message":     error.Error(),
-		})
-		return
-	}
-
-	c.JSON(http.StatusOK, gin.H{
-		"OK":       "OK",
-		"response": response,
-	})
 }

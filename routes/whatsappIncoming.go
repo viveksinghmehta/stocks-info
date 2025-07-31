@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
+	"github.com/lib/pq"
 	"github.com/twilio/twilio-go"
 	openApi "github.com/twilio/twilio-go/rest/api/v2010"
 )
@@ -21,6 +22,17 @@ type TwillioWhatsappMessageRequest struct {
 	From                string `json:"From" form:"From"`
 	To                  string `json:"To" form:"To"`
 	Body                string `json:"Body" form:"Body"`
+}
+
+type User struct {
+	ID                      string
+	PhoneNumber             string
+	Name                    sql.NullString
+	LastMessageTime         sql.NullTime
+	LastTwoMessagesToUser   pq.StringArray
+	LastTwoMessagesFromUser pq.StringArray
+	IsSubscribed            bool
+	SubscribedStocks        pq.StringArray
 }
 
 func twillioClient(phone, message string) (*openApi.ApiV2010Message, error) {
@@ -41,6 +53,58 @@ func twillioClient(phone, message string) (*openApi.ApiV2010Message, error) {
 	return client.Api.CreateMessage(params)
 }
 
+func GetUserByPhone(db *sql.DB, phoneNumber string) (*User, error) {
+	var user User
+	query := `
+        SELECT
+            id,
+            phone_number,
+            name,
+            last_message_time,
+            last_two_messages_to_user,
+            last_two_messages_from_user,
+            is_subscribed,
+            subscribed_stocks
+        FROM users WHERE phone_number = $1
+    `
+	err := db.QueryRow(query, phoneNumber).Scan(
+		&user.ID,
+		&user.PhoneNumber,
+		&user.Name,
+		&user.LastMessageTime,
+		(*pq.StringArray)(&user.LastTwoMessagesToUser),
+		(*pq.StringArray)(&user.LastTwoMessagesFromUser),
+		&user.IsSubscribed,
+		(*pq.StringArray)(&user.SubscribedStocks),
+	)
+	if err == sql.ErrNoRows {
+		// User not found
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &user, nil
+}
+
+func InsertUser(db *sql.DB, phoneNumber string) error {
+	insertQuery := `
+        INSERT INTO users (phone_number, last_message_time) VALUES ($1, NOW())
+    `
+	_, err := db.Exec(insertQuery, phoneNumber)
+	return err
+}
+
+func UpdateLastMessageTime(db *sql.DB, phoneNumber string) error {
+	updateQuery := `
+        UPDATE users
+        SET last_message_time = NOW()
+        WHERE phone_number = $1
+    `
+	_, err := db.Exec(updateQuery, phoneNumber)
+	return err
+}
+
 func WhatsAppIncoming(db *sql.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var message TwillioWhatsappMessageRequest
@@ -53,11 +117,42 @@ func WhatsAppIncoming(db *sql.DB) gin.HandlerFunc {
 			return
 		}
 
-		// 2. Check if the number is in the database or a new user.
+		// Check if the user exists
+		user, error := GetUserByPhone(db, message.From)
+		if error != nil {
+			c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"message": "Database error"})
+			return
+		}
+		if user == nil {
+			// User not found, insert new user with timestamp
+			err := InsertUser(db, message.From)
+			if err != nil {
+				c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"message": "Could not save new user"})
+				return
+			}
+		} else {
+			// User exists, update last_message_time
+			err := UpdateLastMessageTime(db, message.From)
+			if err != nil {
+				c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"message": "Could not update timestamp"})
+				return
+			}
+		}
 		// 2 - 1. if new user save it the DB
 		// 2 - 2. ask for the name of the user and save it against its phone number
 
-		messageBody := "Hello 👋🏻, This is Stocks Info Account"
+		messageBody := `👋🏻 Hello and welcome to the Stocks Info Channel!
+
+📈 You can try:
+
+• 🔍 Search stock price: send "stock <ticker>" (e.g., stock AAPL)
+• ⭐ Get top stocks: send "top stocks"
+• 📢 Index price alert: send "alert <index>" (e.g., alert NASDAQ)
+
+💬 Feel free to ask me anything about stocks, and I'll help you out!
+
+
+Made with ❤️ in 🇮🇳`
 
 		phone := strings.TrimPrefix(message.From, helper.AppConstant().WhatsApp)
 

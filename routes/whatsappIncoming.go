@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"os"
 	"stocks-info-channel/helper"
+	"stocks-info-channel/model"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -12,28 +13,6 @@ import (
 	"github.com/twilio/twilio-go"
 	openApi "github.com/twilio/twilio-go/rest/api/v2010"
 )
-
-type TwillioWhatsappMessageRequest struct {
-	MessageSid          string `json:"MessageSid" form:"MessageSid"`
-	SmsSid              string `json:"SmsSid" form:"SmsSid"`
-	SmsMessageSid       string `json:"SmsMessageSid" form:"SmsMessageSid"`
-	AccountSid          string `json:"AccountSid" form:"AccountSid"`
-	MessagingServiceSid string `json:"MessagingServiceSid" form:"MessagingServiceSid"`
-	From                string `json:"From" form:"From"`
-	To                  string `json:"To" form:"To"`
-	Body                string `json:"Body" form:"Body"`
-}
-
-type User struct {
-	ID                      string
-	PhoneNumber             string
-	Name                    sql.NullString
-	LastMessageTime         sql.NullTime
-	LastTwoMessagesToUser   pq.StringArray
-	LastTwoMessagesFromUser pq.StringArray
-	IsSubscribed            bool
-	SubscribedStocks        pq.StringArray
-}
 
 func twillioClient(phone, message string) (*openApi.ApiV2010Message, error) {
 	sid := os.Getenv(helper.EnvironmentConstant().TWILIO_ACCOUNT_SID)
@@ -53,8 +32,8 @@ func twillioClient(phone, message string) (*openApi.ApiV2010Message, error) {
 	return client.Api.CreateMessage(params)
 }
 
-func GetUserByPhone(db *sql.DB, phoneNumber string) (*User, error) {
-	var user User
+func GetUserByPhone(db *sql.DB, phoneNumber string) (*model.User, error) {
+	var user model.User
 	query := `
         SELECT
             id,
@@ -105,9 +84,66 @@ func UpdateLastMessageTime(db *sql.DB, phoneNumber string) error {
 	return err
 }
 
+// SearchStocks finds stocks by symbol or company name based on user input logic.
+func SearchStocks(db *sql.DB, stockName string) ([]model.Stock, error) {
+	var results []model.Stock
+
+	if len(stockName) == 0 {
+		return results, nil // or return error if you prefer
+	}
+
+	if strings.Contains(stockName, " ") {
+		// Space in query: direct company name search
+		likePattern := "%" + stockName + "%"
+		rows, err := db.Query(
+			`SELECT symbol, company_name FROM stocks WHERE company_name ILIKE $1`,
+			likePattern,
+		)
+		if err != nil {
+			return nil, err
+		}
+		defer rows.Close()
+		for rows.Next() {
+			var s model.Stock
+			if err := rows.Scan(&s.Symbol, &s.CompanyName); err == nil {
+				results = append(results, s)
+			}
+		}
+		return results, nil
+	}
+
+	// No space: try exact symbol, then fallback to company name
+	var direct model.Stock
+	err := db.QueryRow(
+		`SELECT symbol, company_name FROM stocks WHERE symbol ILIKE $1 LIMIT 1`,
+		stockName,
+	).Scan(&direct.Symbol, &direct.CompanyName)
+	if err == nil {
+		results = append(results, direct)
+		return results, nil
+	}
+
+	likePattern := "%" + stockName + "%"
+	rows, err := db.Query(
+		`SELECT symbol, company_name FROM stocks WHERE company_name ILIKE $1`,
+		likePattern,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var s model.Stock
+		if err := rows.Scan(&s.Symbol, &s.CompanyName); err == nil {
+			results = append(results, s)
+		}
+	}
+	return results, nil
+}
+
 func WhatsAppIncoming(db *sql.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		var message TwillioWhatsappMessageRequest
+		var message model.TwillioWhatsappMessageRequest
 
 		// 1. Receive the message and decode it
 		if err := c.Bind(&message); err != nil {
@@ -117,57 +153,104 @@ func WhatsAppIncoming(db *sql.DB) gin.HandlerFunc {
 			return
 		}
 
+		phoneNumber := strings.TrimPrefix(message.From, helper.AppConstant().WhatsApp)
+
 		// Check if the user exists
-		user, error := GetUserByPhone(db, message.From)
+		user, error := GetUserByPhone(db, phoneNumber)
 		if error != nil {
 			c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"message": "Database error"})
 			return
 		}
 		if user == nil {
 			// User not found, insert new user with timestamp
-			err := InsertUser(db, message.From)
+			err := InsertUser(db, phoneNumber)
 			if err != nil {
 				c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"message": "Could not save new user"})
 				return
 			}
 		} else {
 			// User exists, update last_message_time
-			err := UpdateLastMessageTime(db, message.From)
+			err := UpdateLastMessageTime(db, phoneNumber)
 			if err != nil {
 				c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"message": "Could not update timestamp"})
 				return
 			}
 		}
-		// 2 - 1. if new user save it the DB
-		// 2 - 2. ask for the name of the user and save it against its phone number
 
-		messageBody := `👋🏻 Hello and welcome to the Stocks Info Channel!
+		userMessage := strings.ToLower(message.Body)
 
-📈 You can try:
+		// Check if the user has send a normal message or from the options
+		switch {
+		case strings.HasPrefix(userMessage, "stock "):
+			// Reply with stock price logic
+			companyName := strings.TrimPrefix(userMessage, "stock ")
 
-• 🔍 Search stock price: send "stock <ticker>" (e.g., stock AAPL)
-• ⭐ Get top stocks: send "top stocks"
-• 📢 Index price alert: send "alert <index>" (e.g., alert NASDAQ)
-
-💬 Feel free to ask me anything about stocks, and I'll help you out!
-
-
-Made with ❤️ in 🇮🇳`
-
-		phone := strings.TrimPrefix(message.From, helper.AppConstant().WhatsApp)
-
-		response, error := twillioClient(phone, messageBody)
-		if error != nil {
-			c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{
-				"status_code": http.StatusInternalServerError,
-				"message":     error.Error(),
+			matches, error := SearchStocks(db, companyName)
+			if error != nil {
+				// handle DB error
+				c.JSON(http.StatusInternalServerError, gin.H{
+					"error": error.Error(),
+				})
+			}
+			if len(matches) == 0 {
+				// reply: "No company found"
+				messageBody := `❌ No results found. 🤔
+Did you mean something else? Try entering the full company name or stock symbol. 🔍`
+				response, error := twillioClient(phoneNumber, messageBody)
+				if error != nil {
+					c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{
+						"status_code": http.StatusInternalServerError,
+						"message":     error.Error(),
+					})
+					return
+				}
+				c.JSON(http.StatusOK, gin.H{
+					"OK":       "OK",
+					"response": response,
+				})
+			} else if len(matches) == 1 {
+				// reply: match found, show symbol and name
+			} else {
+				// reply: show all matches, let user pick
+			}
+		case userMessage == "top stocks":
+			// Reply with top stocks logic
+			c.JSON(http.StatusOK, gin.H{
+				"OK":      "OK",
+				"Message": message.Body,
 			})
-			return
-		}
+		case strings.HasPrefix(userMessage, "alert "):
+			// Reply with alert logic
+			c.JSON(http.StatusOK, gin.H{
+				"OK":      "OK",
+				"Message": message.Body,
+			})
+		default:
+			messageBody := `👋🏻 Welcome to the Stocks Info Channel!
+Send one of these messages:
+• 🔍 Stock HUL — for HUL stock price
+• ⭐ top stocks — to get today's top stocks
+• 📢 alert NIFTY 50 — for index price alerts
 
-		c.JSON(http.StatusOK, gin.H{
-			"OK":       "OK",
-			"response": response,
-		})
+You can get alerts and info for *any* Indian stocks!
+
+💬 Try them now, or ask me anything about stocks.
+
+---
+Made with ❤️ in 🇮🇳 by Vivek Singh Mehta`
+
+			response, error := twillioClient(phoneNumber, messageBody)
+			if error != nil {
+				c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{
+					"status_code": http.StatusInternalServerError,
+					"message":     error.Error(),
+				})
+				return
+			}
+			c.JSON(http.StatusOK, gin.H{
+				"OK":       "OK",
+				"response": response,
+			})
+		}
 	}
 }

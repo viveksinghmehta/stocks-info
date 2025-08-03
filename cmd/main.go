@@ -41,6 +41,7 @@ func main() {
 	router := gin.Default()
 
 	router.POST("whatsapp", routes.WhatsAppIncoming(db))
+	router.GET("updatecsv", routes.UpdateEquity(db))
 
 	router.Run()
 }

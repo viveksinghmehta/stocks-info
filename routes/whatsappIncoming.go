@@ -2,6 +2,7 @@ package routes
 
 import (
 	"database/sql"
+	"fmt"
 	"net/http"
 	"os"
 	"stocks-info-channel/helper"
@@ -88,10 +89,6 @@ func UpdateLastMessageTime(db *sql.DB, phoneNumber string) error {
 func SearchStocks(db *sql.DB, stockName string) ([]model.Stock, error) {
 	var results []model.Stock
 
-	if len(stockName) == 0 {
-		return results, nil // or return error if you prefer
-	}
-
 	if strings.Contains(stockName, " ") {
 		// Space in query: direct company name search
 		likePattern := "%" + stockName + "%"
@@ -139,6 +136,19 @@ func SearchStocks(db *sql.DB, stockName string) ([]model.Stock, error) {
 		}
 	}
 	return results, nil
+}
+
+// Generates a WhatsApp message listing companies with emojis
+func GenerateCompanyMessage(companies []model.Stock) string {
+	var sb strings.Builder
+	sb.WriteString("🤔 Are you trying to search for one of these companies?\n")
+	sb.WriteString("📋 Please use either the full company name or its symbol when making your request. Here are the options:\n\n")
+	for _, c := range companies {
+		sb.WriteString(fmt.Sprintf("🔹 %s (%s)\n", c.CompanyName, c.Symbol))
+	}
+	sb.WriteString("\n💡 For example: try searching \"HINDUNILVR\" or \"Hindustan Unilever Limited\".\n")
+	sb.WriteString("❓ Let me know which company you’re interested in!")
+	return sb.String()
 }
 
 func WhatsAppIncoming(db *sql.DB) gin.HandlerFunc {
@@ -208,10 +218,27 @@ Did you mean something else? Try entering the full company name or stock symbol.
 					"OK":       "OK",
 					"response": response,
 				})
+				return
 			} else if len(matches) == 1 {
 				// reply: match found, show symbol and name
+
+				return
 			} else {
 				// reply: show all matches, let user pick
+				messageBody := GenerateCompanyMessage(matches)
+				response, error := twillioClient(phoneNumber, messageBody)
+				if error != nil {
+					c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{
+						"status_code": http.StatusInternalServerError,
+						"message":     error.Error(),
+					})
+					return
+				}
+				c.JSON(http.StatusOK, gin.H{
+					"OK":       "OK",
+					"response": response,
+				})
+				return
 			}
 		case userMessage == "top stocks":
 			// Reply with top stocks logic

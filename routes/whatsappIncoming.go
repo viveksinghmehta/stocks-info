@@ -144,7 +144,8 @@ func GenerateCompanyMessage(companies []model.Stock) string {
 	sb.WriteString("🤔 Are you trying to search for one of these companies?\n")
 	sb.WriteString("📋 Please use either the full company name or its symbol when making your request. Here are the options:\n\n")
 	for _, c := range companies {
-		sb.WriteString(fmt.Sprintf("🔹 %s (%s)\n", c.CompanyName, c.Symbol))
+		sb.WriteString(fmt.Sprintf("🔹 %s\n", c.CompanyName))
+		sb.WriteString(fmt.Sprintf(" - (%s) \n\n", c.Symbol))
 	}
 	sb.WriteString("\n💡 For example: try searching \"HINDUNILVR\" or \"Hindustan Unilever Limited\".\n")
 	sb.WriteString("❓ Let me know which company you’re interested in!")

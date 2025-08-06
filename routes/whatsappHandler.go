@@ -1,6 +1,7 @@
 package routes
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"net/http"
@@ -9,6 +10,7 @@ import (
 	"stocks-info-channel/model"
 	"strings"
 
+	"github.com/chromedp/chromedp"
 	"github.com/gin-gonic/gin"
 	"github.com/lib/pq"
 	"github.com/twilio/twilio-go"
@@ -152,6 +154,31 @@ func GenerateCompanyMessage(companies []model.Stock) string {
 	return sb.String()
 }
 
+func GetYahooFinancePrice(symbol string) (float64, error) {
+	url := fmt.Sprintf("https://finance.yahoo.com/quote/%s", symbol)
+	ctx, cancel := chromedp.NewContext(context.Background())
+	defer cancel()
+
+	var priceStr string
+	// Wait for the visible selector (update if Yahoo changes it!)
+	selector := `span.yf-ipw1h0.base`
+
+	// Run the browser and scrape
+	err := chromedp.Run(ctx,
+		chromedp.Navigate(url),
+		chromedp.WaitVisible(selector, chromedp.ByQuery),
+		chromedp.Text(selector, &priceStr, chromedp.ByQuery),
+	)
+	if err != nil {
+		return 0, err
+	}
+
+	priceStr = strings.ReplaceAll(priceStr, ",", "")
+	var price float64
+	fmt.Sscanf(priceStr, "%f", &price)
+	return price, nil
+}
+
 func WhatsAppIncoming(db *sql.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var message model.TwillioWhatsappMessageRequest
@@ -222,7 +249,18 @@ Did you mean something else? Try entering the full company name or stock symbol.
 				return
 			} else if len(matches) == 1 {
 				// reply: match found, show symbol and name
-
+				// Adding .NS in the company to get the NSE price
+				companySymbol := matches[0].Symbol + ".NS"
+				print("### symbol :- ", companySymbol)
+				currentPrice, error := GetYahooFinancePrice(companySymbol)
+				if error != nil {
+					c.JSON(http.StatusInternalServerError, gin.H{
+						"error":        "Failed to get current price",
+						"server error": error.Error(),
+					})
+					return
+				}
+				c.JSON(http.StatusOK, currentPrice)
 				return
 			} else {
 				// reply: show all matches, let user pick

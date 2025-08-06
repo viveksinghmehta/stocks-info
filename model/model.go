@@ -31,3 +31,30 @@ type Stock struct {
 	Symbol      string `json:"symbol"`
 	CompanyName string `json:"company_name"`
 }
+
+type CompanyResponse struct {
+	Symbol        string             `json:"symbol"`
+	CurrentPrice  float64            `json:"current_price"`
+	PercentChange map[string]float64 `json:"percent_change"`
+}
+
+type QuoteResponse struct {
+	QuoteResponse struct {
+		Result []struct {
+			RegularMarketPrice float64 `json:"regularMarketPrice"`
+		} `json:"result"`
+	} `json:"quoteResponse"`
+}
+
+type Chart struct {
+	Chart struct {
+		Result []struct {
+			Timestamp  []int64 `json:"timestamp"`
+			Indicators struct {
+				Quote []struct {
+					Close []float64 `json:"close"`
+				} `json:"quote"`
+			} `json:"indicators"`
+		} `json:"result"`
+	} `json:"chart"`
+}

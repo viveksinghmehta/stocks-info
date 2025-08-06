@@ -5,10 +5,24 @@ import (
 	"encoding/csv"
 	"fmt"
 	"log"
+	"net/http"
 	"os"
 
 	"github.com/gin-gonic/gin"
+	"github.com/piquette/finance-go/quote"
 )
+
+func CheckPrice() gin.HandlerFunc {
+	return func(g *gin.Context) {
+		q, err := quote.Get("RELIANCE.NS")
+		if err != nil {
+			fmt.Println("Error:", err)
+			return
+		}
+		fmt.Printf("✅ Symbol: %s\nCurrent Price: ₹%f\n", q.Symbol, q.RegularMarketPrice)
+		g.JSON(http.StatusOK, gin.H{})
+	}
+}
 
 func UpdateEquity(db *sql.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {

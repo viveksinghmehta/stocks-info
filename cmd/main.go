@@ -40,8 +40,9 @@ func main() {
 	db := connectTODB()
 	router := gin.Default()
 
-	router.POST("whatsapp", routes.WhatsAppIncoming(db))
+	router.POST("whatsapp", routes.WhatsAppHandler(db))
 	router.GET("updatecsv", routes.UpdateEquity(db))
+	router.GET("price", routes.CheckPrice())
 
 	router.Run()
 }

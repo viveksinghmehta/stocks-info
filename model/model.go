@@ -2,6 +2,7 @@ package model
 
 import (
 	"database/sql"
+	"time"
 
 	"github.com/lib/pq"
 )
@@ -27,34 +28,24 @@ type User struct {
 	SubscribedStocks        pq.StringArray
 }
 
+// type Stock struct {
+// 	Symbol      string `json:"symbol"`
+// 	CompanyName string `json:"company_name"`
+// }
+
 type Stock struct {
-	Symbol      string `json:"symbol"`
-	CompanyName string `json:"company_name"`
+	Symbol      string
+	CompanyName string
 }
 
-type CompanyResponse struct {
-	Symbol        string             `json:"symbol"`
-	CurrentPrice  float64            `json:"current_price"`
-	PercentChange map[string]float64 `json:"percent_change"`
+type GrowthEntry struct {
+	FromPrice float64
+	ToPrice   float64
+	Growth    float64
 }
 
-type QuoteResponse struct {
-	QuoteResponse struct {
-		Result []struct {
-			RegularMarketPrice float64 `json:"regularMarketPrice"`
-		} `json:"result"`
-	} `json:"quoteResponse"`
-}
-
-type Chart struct {
-	Chart struct {
-		Result []struct {
-			Timestamp  []int64 `json:"timestamp"`
-			Indicators struct {
-				Quote []struct {
-					Close []float64 `json:"close"`
-				} `json:"quote"`
-			} `json:"indicators"`
-		} `json:"result"`
-	} `json:"chart"`
+type StockGrowthStats struct {
+	Symbol    string
+	Timestamp time.Time
+	Entries   map[string]GrowthEntry
 }

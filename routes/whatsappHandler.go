@@ -2,6 +2,7 @@ package routes
 
 import (
 	"database/sql"
+	"log"
 	"net/http"
 	"strings"
 
@@ -22,6 +23,14 @@ func WhatsAppIncomingHandler(db *sql.DB) gin.HandlerFunc {
 
 		phone := strings.TrimPrefix(message.From, helper.AppConstant().WhatsApp)
 		body := strings.ToLower(message.Body)
+
+		log.Println("Message from :- ", message.From)
+		log.Println("Message To :- ", message.To)
+		log.Println("Message Body :- ", message.Body)
+		log.Println("Message AccountSid :- ", message.AccountSid)
+		log.Println("Message MessageSid :- ", message.MessageSid)
+		log.Println("Message SmsSid :- ", message.SmsSid)
+		log.Println("Message SmsMessageSid :- ", message.SmsMessageSid)
 
 		user, err := services.GetOrCreateUser(db, phone)
 		if err != nil {

@@ -28,20 +28,12 @@ func WhatsAppIncomingHandler(db *sql.DB) gin.HandlerFunc {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "DB error"})
 			return
 		}
-		println("### USER :- ", user)
-		// if user == nil {
-		// 	_ = services.InsertUser(db, phone)
-		// } else {
-		// 	_ = services.UpdateLastMessageTime(db, phone)
-		// }
 
 		switch {
 		case strings.HasPrefix(body, "stock "):
-			println("### Stock search :- ", body)
-			handleStockQuery(db, phone, strings.TrimPrefix(body, "stock "), c)
+			handleStockQuery(db, phone, user, strings.TrimPrefix(body, "stock "), c)
 		case strings.HasPrefix(body, "alert "):
-			println("### alert :- ", body)
-			handleStockAlerts(db, phone, strings.TrimPrefix(body, "alert "), c)
+			handleStockAlerts(db, phone, user, strings.TrimPrefix(body, "alert "), c)
 		case body == "top stocks":
 			// TODO: implement top stocks logic
 			c.JSON(http.StatusOK, gin.H{"msg": "Coming soon!"})
@@ -53,7 +45,7 @@ func WhatsAppIncomingHandler(db *sql.DB) gin.HandlerFunc {
 	}
 }
 
-func handleStockQuery(db *sql.DB, phone, query string, c *gin.Context) {
+func handleStockQuery(db *sql.DB, phone string, user *model.User, query string, c *gin.Context) {
 	matches, err := services.SearchStocks(db, query)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -65,33 +57,55 @@ func handleStockQuery(db *sql.DB, phone, query string, c *gin.Context) {
 		msg := helper.NoStockFoundMessage()
 		services.SendWhatsApp(phone, msg)
 	case 1: // exact match found for the stock
-		price, err := services.GetYahooFinancePrice(matches[0].Symbol + ".NS")
+		stockPerformance, err := services.GetStockPerformance(matches[0].Symbol+".NS", matches[0].CompanyName)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch stock price"})
 			return
 		}
-		msg := helper.SingleStockMessage(matches[0], price)
+		msg := helper.SingleStockPerformanceMessage(stockPerformance)
 		services.SendWhatsApp(phone, msg)
 	default: // multiple company found with stock name
 		msg := helper.GenerateCompanyMessage(matches)
+		err := services.UpdateSentMessagesToUser(db, user, msg)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"status": "Could not save the message in DB",
+				"error":  err.Error(),
+			})
+		}
 		services.SendWhatsApp(phone, msg)
 	}
 	c.JSON(http.StatusOK, gin.H{"status": "Stock response sent"})
 }
 
-func handleStockAlerts(db *sql.DB, phone, alert string, c *gin.Context) {
-	stocks := strings.Fields(alert)
-
-	for _, symbol := range stocks {
-		go func(s string) {
-			price, err := services.GetYahooFinancePrice(s + ".NS")
-			if err != nil {
-				services.SendWhatsApp(phone, "⚠️ Error fetching "+s)
-				return
-			}
-			msg := helper.AlertStockMessage(s, price)
-			services.SendWhatsApp(phone, msg)
-		}(symbol)
+func handleStockAlerts(db *sql.DB, phone string, user *model.User, query string, c *gin.Context) {
+	matches, err := services.SearchStocks(db, query)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	switch len(matches) {
+	case 0: // No stock font
+		msg := helper.NoStockFoundMessage()
+		services.SendWhatsApp(phone, msg)
+	case 1: // exact match found for the stock
+		stockPerformance, err := services.GetStockPerformance(matches[0].Symbol+".NS", matches[0].CompanyName)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch stock price"})
+			return
+		}
+		msg := helper.SingleStockPerformanceMessage(stockPerformance)
+		services.SendWhatsApp(phone, msg)
+	default: // multiple company found with stock name
+		msg := helper.GenerateCompanyMessage(matches)
+		err := services.UpdateSentMessagesToUser(db, user, msg)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"status": "Could not save the message in DB",
+				"error":  err.Error(),
+			})
+		}
+		services.SendWhatsApp(phone, msg)
 	}
 
 	c.JSON(http.StatusOK, gin.H{"status": "Alert messages dispatched"})

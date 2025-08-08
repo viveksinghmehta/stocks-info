@@ -2,24 +2,63 @@ package services
 
 import (
 	"database/sql"
+	"encoding/json"
 	"fmt"
+	"net/http"
+	"os"
 	"strings"
 	"time"
 
-	"github.com/psanford/finance-go/chart"
-	"github.com/psanford/finance-go/quote"
-
+	"stocks-info-channel/helper"
 	"stocks-info-channel/model"
 )
 
 // SearchStocks looks up company symbols or names
 func SearchStocks(db *sql.DB, query string) ([]model.Stock, error) {
-	rows, err := db.Query(`
-		SELECT symbol, company_name FROM stocks
-		WHERE LOWER(company_name) LIKE '%' || LOWER($1) || '%'
-		OR LOWER(symbol) LIKE '%' || LOWER($1) || '%'
-		LIMIT 10
-	`, query)
+	hasSpace := strings.Contains(query, " ")
+
+	var rows *sql.Rows
+	var err error
+
+	if hasSpace {
+		// User is likely searching for a company name
+		rows, err = db.Query(`
+			SELECT symbol, company_name FROM stocks
+			WHERE LOWER(company_name) LIKE '%' || LOWER($1) || '%'
+			LIMIT 10
+		`, query)
+	} else {
+		// User is likely searching for a symbol
+		// First try exact match
+		rows, err = db.Query(`
+			SELECT symbol, company_name FROM stocks
+			WHERE LOWER(symbol) = LOWER($1)
+			LIMIT 1
+		`, query)
+
+		if err == nil && rows != nil {
+			defer rows.Close()
+			var exactMatch []model.Stock
+			for rows.Next() {
+				var stock model.Stock
+				if err := rows.Scan(&stock.Symbol, &stock.CompanyName); err == nil {
+					exactMatch = append(exactMatch, stock)
+				}
+			}
+			if len(exactMatch) > 0 {
+				return exactMatch, nil
+			}
+		}
+
+		// Fallback to fuzzy match if no exact match found
+		rows, err = db.Query(`
+			SELECT symbol, company_name FROM stocks
+			WHERE LOWER(symbol) LIKE '%' || LOWER($1) || '%'
+			OR LOWER(company_name) LIKE '%' || LOWER($1) || '%'
+			LIMIT 10
+		`, query)
+	}
+
 	if err != nil {
 		return nil, err
 	}
@@ -28,75 +67,76 @@ func SearchStocks(db *sql.DB, query string) ([]model.Stock, error) {
 	var stocks []model.Stock
 	for rows.Next() {
 		var stock model.Stock
-		if err := rows.Scan(&stock.Symbol, &stock.CompanyName); err != nil {
-			continue
+		if err := rows.Scan(&stock.Symbol, &stock.CompanyName); err == nil {
+			stocks = append(stocks, stock)
 		}
-		stocks = append(stocks, stock)
 	}
 	return stocks, nil
 }
 
 // GetYahooFinancePrice fetches the current price from Yahoo Finance
-func GetYahooFinancePrice(symbol string) (float64, error) {
-	q, err := quote.Get(symbol)
+func GetStockPerformance(symbol string, companyName string) (model.StockPerformance, error) {
+	url := fmt.Sprintf(os.Getenv(helper.EnvironmentConstant().STOCK_PRICE_URL)+"%s", symbol)
+
+	resp, err := http.Get(url)
 	if err != nil {
-		return 0, err
+		return model.StockPerformance{}, err
 	}
-	return q.RegularMarketPrice, nil
-}
+	defer resp.Body.Close()
 
-// GetGrowthStats fetches historical data and calculates performance
-func GetGrowthStats(symbol string) (model.StockGrowthStats, error) {
-	now := time.Now()
-	durations := []struct {
-		Label string
-		Start time.Time
-	}{
-		{"1M", now.AddDate(0, -1, 0)},
-		{"1Y", now.AddDate(-1, 0, 0)},
-		{"5Y", now.AddDate(-5, 0, 0)},
+	if resp.StatusCode != http.StatusOK {
+		return model.StockPerformance{}, fmt.Errorf("unexpected status code: %d", resp.StatusCode)
 	}
 
-	result := model.StockGrowthStats{
-		Symbol:    symbol,
-		Timestamp: now,
-		Entries:   make(map[string]model.GrowthEntry),
+	var apiResp model.StockAPIResponse
+	if err := json.NewDecoder(resp.Body).Decode(&apiResp); err != nil {
+		return model.StockPerformance{}, err
 	}
 
-	current, err := GetYahooFinancePrice(symbol)
-	if err != nil {
-		return result, err
-	}
+	// Prepare Entries map with growth calculation
+	entries := make(map[string]model.HistoricalEntry)
 
-	for _, d := range durations {
-		params := &chart.Params{
-			Symbol:   symbol,
-			Start:    d.Start.Unix(),
-			End:      now.Unix(),
-			Interval: chart.Interval1d,
-		}
-		iter := chart.Get(params)
-		var firstClose float64
-		for iter.Next() {
-			bar := iter.Bar()
-			if bar.Close != 0 {
-				firstClose = bar.Close
-				break
-			}
-		}
-		if firstClose == 0 {
-			continue
-		}
-
-		percent := ((current - firstClose) / firstClose) * 100
-		result.Entries[d.Label] = model.GrowthEntry{
-			FromPrice: firstClose,
-			ToPrice:   current,
-			Growth:    percent,
+	// 1M growth
+	if apiResp.Price1m != 0 {
+		growth := ((apiResp.CurrentPrice - apiResp.Price1m) / apiResp.Price1m) * 100
+		entries["1M"] = model.HistoricalEntry{
+			FromPrice: apiResp.Price1m,
+			ToPrice:   apiResp.CurrentPrice,
+			Growth:    growth,
 		}
 	}
 
-	return result, nil
+	// 1Y growth
+	if apiResp.Price1y != 0 {
+		growth := ((apiResp.CurrentPrice - apiResp.Price1y) / apiResp.Price1y) * 100
+		entries["1Y"] = model.HistoricalEntry{
+			FromPrice: apiResp.Price1y,
+			ToPrice:   apiResp.CurrentPrice,
+			Growth:    growth,
+		}
+	}
+
+	// 5Y growth
+	if apiResp.Price5y != 0 {
+		growth := ((apiResp.CurrentPrice - apiResp.Price5y) / apiResp.Price5y) * 100
+		entries["5Y"] = model.HistoricalEntry{
+			FromPrice: apiResp.Price5y,
+			ToPrice:   apiResp.CurrentPrice,
+			Growth:    growth,
+		}
+	}
+
+	// Create StockPerformance object
+	stockPerf := model.StockPerformance{
+		CompanyName: companyName,
+		Symbol:      apiResp.Symbol,
+		Current:     apiResp.CurrentPrice,
+		Open:        apiResp.OpenPrice,
+		Timestamp:   time.Now(),
+		Entries:     entries,
+	}
+
+	return stockPerf, nil
 }
 
 func FormatGrowthMessage(stats model.StockGrowthStats) string {

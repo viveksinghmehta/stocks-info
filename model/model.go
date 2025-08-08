@@ -49,3 +49,28 @@ type StockGrowthStats struct {
 	Timestamp time.Time
 	Entries   map[string]GrowthEntry
 }
+
+type StockAPIResponse struct {
+	CurrentPrice float64 `json:"current_price"`
+	OpenPrice    float64 `json:"open_price"`
+	Price1m      float64 `json:"price_1m"`
+	Price1y      float64 `json:"price_1y"`
+	Price3y      float64 `json:"price_3y"`
+	Price5y      float64 `json:"price_5y"`
+	Symbol       string  `json:"symbol"`
+}
+
+type HistoricalEntry struct {
+	FromPrice float64
+	ToPrice   float64
+	Growth    float64 // in percentage
+}
+
+type StockPerformance struct {
+	CompanyName string
+	Symbol      string
+	Current     float64
+	Open        float64
+	Timestamp   time.Time
+	Entries     map[string]HistoricalEntry
+}

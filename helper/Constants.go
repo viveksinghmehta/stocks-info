@@ -6,6 +6,7 @@ type EnvironmentConstants struct {
 	TWILIO_ACCOUNT_SID string
 	TWILIO_AUTH_TOKEN  string
 	PHONE_NUMBER       string
+	STOCK_PRICE_URL    string
 }
 
 func EnvironmentConstant() EnvironmentConstants {
@@ -15,6 +16,7 @@ func EnvironmentConstant() EnvironmentConstants {
 		TWILIO_AUTH_TOKEN:  "TWILIO_AUTH_TOKEN",
 		TWILIO_ACCOUNT_SID: "TWILIO_ACCOUNT_SID",
 		PHONE_NUMBER:       "PHONE_NUMBER",
+		STOCK_PRICE_URL:    "STOCK_PRICE_URL",
 	}
 }
 

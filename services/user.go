@@ -1,6 +1,7 @@
 package services
 
 import (
+	"context"
 	"database/sql"
 	"log"
 
@@ -65,4 +66,28 @@ func createUser(db *sql.DB, phone string) (*model.User, error) {
 	}
 
 	return user, nil
+}
+
+func UpdateSentMessagesToUser(db *sql.DB, user *model.User, newMessage string) error {
+	lastMessageToUser := user.LastTwoMessagesToUser
+
+	// Append new messages and keep only last 2
+	lastMessageToUser = append(lastMessageToUser, newMessage)
+	if len(lastMessageToUser) > 2 {
+		lastMessageToUser = lastMessageToUser[len(lastMessageToUser)-2:]
+	}
+
+	updateQuery := `
+	UPDATE users
+	SET last_two_messages_to_user = $1
+	WHERE phone_number = $2
+	`
+	_, err := db.ExecContext(context.Background(), updateQuery, lastMessageToUser, user.PhoneNumber)
+	if err != nil {
+		log.Printf("❌ Failed to update messages for user %s: %v", user.PhoneNumber, err)
+		return err
+	}
+
+	log.Printf("✅ Updated last 2 messages for user %s", user.PhoneNumber)
+	return nil
 }

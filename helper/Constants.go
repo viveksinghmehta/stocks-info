@@ -7,6 +7,7 @@ type EnvironmentConstants struct {
 	TWILIO_AUTH_TOKEN  string
 	PHONE_NUMBER       string
 	STOCK_PRICE_URL    string
+	PORT               string
 }
 
 func EnvironmentConstant() EnvironmentConstants {
@@ -17,15 +18,18 @@ func EnvironmentConstant() EnvironmentConstants {
 		TWILIO_ACCOUNT_SID: "TWILIO_ACCOUNT_SID",
 		PHONE_NUMBER:       "PHONE_NUMBER",
 		STOCK_PRICE_URL:    "STOCK_PRICE_URL",
+		PORT:               "PORT",
 	}
 }
 
 type AppConstants struct {
-	WhatsApp string
+	WhatsApp    string
+	DefaultPort string
 }
 
 func AppConstant() AppConstants {
 	return AppConstants{
-		WhatsApp: "whatsapp:",
+		WhatsApp:    "whatsapp:",
+		DefaultPort: "8080",
 	}
 }

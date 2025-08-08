@@ -43,5 +43,9 @@ func main() {
 	router.POST("whatsapp", routes.WhatsAppIncomingHandler(db))
 	router.GET("alert", routes.StockAlertHandler(db))
 
-	router.Run()
+	port := os.Getenv(helper.EnvironmentConstant().PORT)
+	if port == "" {
+		port = helper.AppConstant().DefaultPort
+	}
+	router.Run(":" + port)
 }

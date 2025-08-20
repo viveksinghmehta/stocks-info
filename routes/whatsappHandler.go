@@ -66,10 +66,44 @@ func handleStockQuery(db *sql.DB, phone string, user *model.User, query string, 
 	}
 
 	switch len(matches) {
-	case 0: // No stock font
+	case 0: // No stock found
 		log.Println("No stock found...")
-		msg := helper.NoStockFoundMessage()
-		services.SendWhatsApp(phone, msg)
+
+		userHasCheckFor2Times, error := services.CheckForTwoStockSeachTries(db, user)
+		if error != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"status": "Could not save the message in DB",
+				"error":  error.Error(),
+			})
+		}
+		if userHasCheckFor2Times {
+			msg := helper.StockNotInDatabaseMessage()
+			err := services.ClearLastTwoMessages(db, user)
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{
+					"message": "Could not clear out the last 2 messages sent to user from DB",
+					"error":   err.Error(),
+				})
+			}
+			services.SendWhatsApp(phone, msg)
+			c.JSON(http.StatusOK, gin.H{
+				"message": "Could not clear out the last 2 messages sent to user from DB",
+				"error":   err.Error(),
+			})
+			return
+		} else {
+			msg := helper.NoStockFoundMessage()
+			err := services.UpdateSentMessagesToUser(db, user, msg)
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{
+					"message": "Could not save the message in DB",
+					"error":   err.Error(),
+				})
+				return
+			}
+			services.SendWhatsApp(phone, msg)
+			return
+		}
 	case 1: // exact match found for the stock
 		log.Println(" Stock Symbol :- ", matches[0].Symbol)
 		log.Println(" Company Name :- ", matches[0].CompanyName)
@@ -87,8 +121,8 @@ func handleStockQuery(db *sql.DB, phone string, user *model.User, query string, 
 		err := services.UpdateSentMessagesToUser(db, user, msg)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{
-				"status": "Could not save the message in DB",
-				"error":  err.Error(),
+				"message": "Could not save the message in DB",
+				"error":   err.Error(),
 			})
 		}
 		services.SendWhatsApp(phone, msg)

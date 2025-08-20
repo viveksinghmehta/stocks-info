@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"log"
 
+	"stocks-info-channel/helper"
 	"stocks-info-channel/model"
 
 	"github.com/lib/pq"
@@ -66,6 +67,51 @@ func createUser(db *sql.DB, phone string) (*model.User, error) {
 	}
 
 	return user, nil
+}
+
+func CheckForTwoStockSeachTries(db *sql.DB, user *model.User) (bool, error) {
+	var lastTwoMessages []string
+
+	// Fetch array directly from Postgres
+	query := `SELECT last_two_messages_to_user FROM users WHERE phone_number = $1`
+	err := db.QueryRow(query, user.PhoneNumber).Scan(pq.Array(&lastTwoMessages))
+	if err != nil {
+		return false, err
+	}
+
+	// Need exactly 2 messages to check
+	if len(lastTwoMessages) < 2 {
+		return false, nil
+	}
+
+	expected := helper.NoStockFoundMessage()
+	// Compare both messages
+	if lastTwoMessages[len(lastTwoMessages)-2] == expected &&
+		lastTwoMessages[len(lastTwoMessages)-1] == expected {
+		return true, nil
+	}
+
+	return false, nil
+}
+
+func ClearLastTwoMessages(db *sql.DB, user *model.User) error {
+	query := `
+	UPDATE users
+ 	SET last_two_messages_to_user = '{}'
+  	WHERE phone_number = $1
+   	`
+	_, err := db.Exec(query, user.PhoneNumber)
+	return err
+}
+
+func RemoveLastMessage(db *sql.DB, user *model.User) error {
+	query := `
+		UPDATE users
+		SET last_two_messages_to_user = last_two_messages_to_user[1:array_length(last_two_messages_to_user, 1)-1]
+		WHERE phone_number = $1
+	`
+	_, err := db.Exec(query, user.PhoneNumber)
+	return err
 }
 
 func UpdateSentMessagesToUser(db *sql.DB, user *model.User, newMessage string) error {

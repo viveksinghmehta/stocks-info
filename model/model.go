@@ -74,3 +74,16 @@ type StockPerformance struct {
 	Timestamp   time.Time
 	Entries     map[string]HistoricalEntry
 }
+
+// NSEResponse - exported struct (capitalized name)
+type NSEResponse struct {
+	Data []struct {
+		Symbol       string  `json:"symbol"`
+		OpenPrice    float64 `json:"openPrice"`
+		DayHighPrice float64 `json:"dayHighPrice"`
+		DayLowPrice  float64 `json:"dayLowPrice"`
+		Ltp          float64 `json:"ltp"`
+		NetPrice     float64 `json:"netPrice"` // % change
+		TradedVolume int64   `json:"tradedVolume"`
+	} `json:"data"`
+}

@@ -10,7 +10,7 @@ func WelcomeMessage() string {
 	return `👋🏻 Welcome to *Stocks Info Channel*!
 
 You can send:
-• 🔍 *Stock HUL* — Get the latest HUL stock price
+• 🔍 *Stock RELIANCE* — Get the latest *RELIANCE (Reliance Industries Ltd)* stock price
 • ⭐ *Top Stocks* — Today's trending stocks *(coming soon 🚧)*
 • 📢 *Alert NIFTY* — Set a stock price alert
 
@@ -18,8 +18,15 @@ Made with ❤️ in 🇮🇳`
 }
 
 func NoStockFoundMessage() string {
-	return `❌ No results found.
-🔍 Try full company name or stock symbol.`
+	return `❌ No matching stock found.
+💡 Try using the full company name or its stock symbol (e.g., INFY, TCS, RELIANCE).`
+}
+
+func StockNotInDatabaseMessage() string {
+	return `⚠️ We couldn’t find this stock.
+It might be missing from our database or not yet updated.
+
+📢 We’ll add it soon and let you know when it’s available.`
 }
 
 func GenerateCompanyMessage(stocks []model.Stock) string {

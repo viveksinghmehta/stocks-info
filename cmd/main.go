@@ -39,7 +39,13 @@ func connectTODB() *sql.DB {
 func main() {
 	db := connectTODB()
 	router := gin.Default()
-
+	// Health check endpoint for Render
+	router.GET("/", func(c *gin.Context) {
+		c.JSON(200, gin.H{
+			"status":  "ok",
+			"message": "Service is running",
+		})
+	})
 	router.POST("whatsapp", routes.WhatsAppIncomingHandler(db))
 	router.GET("alert", routes.StockAlertHandler(db))
 
